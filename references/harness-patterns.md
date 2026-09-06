@@ -3,6 +3,11 @@
 The mechanics that make a black-box suite deterministic. Examples are Go, but
 each pattern is about the shape of the problem, not the language.
 
+These patterns hold for every stack. What changes per stack is how each one is
+instantiated — how readiness is observed, what the processed-marker is, how a
+dependency is made to fail. `adapters.md` answers those per adapter; this file
+says what you are trying to achieve with the answer.
+
 ## 1. Wait on what the service did, never on a clock
 
 `time.Sleep(200ms)` is the seed of every flaky suite: too short on a loaded
@@ -26,6 +31,11 @@ func (db *DB) WaitForRow(ctx context.Context, id string, match func(Row) bool, t
     }
 }
 ```
+
+Some adapters offer a third, better wait: a position the dependency itself
+reports, such as a Kafka consumer group's lag reaching zero. Where one exists it
+beats both, because it is the dependency's own account of what the service has
+consumed. `adapters.md` names it per adapter.
 
 **Wait for the log line** for anything the service was supposed *not* to write.
 "Nothing was stored" is only a fact once you know the message was actually
@@ -67,9 +77,13 @@ sent it:
 ```
 
 Most contracts say unknown fields are ignored, so it changes nothing the service
-does — check that the contract does say so. Because services typically log the
-raw payload, it gives each scenario one unambiguous line to wait for even when
-two scenarios publish otherwise identical messages. Match it in whatever form
+does — check that the contract does say so. Where the payload has no room for
+one — a protobuf message, a schema-registry-validated record — put the marker in
+the envelope instead: gRPC request metadata, a Kafka header, an AMQP property.
+
+Because services typically log the raw payload, it gives each scenario one
+unambiguous line to wait for even when two scenarios publish otherwise
+identical messages. Match it in whatever form
 the log renders it (a `%q`-quoted payload has its inner quotes escaped).
 
 If the contract forbids unknown fields, vary a harmless field per scenario
@@ -91,10 +105,17 @@ func (s *Server) Kill()
 ```
 
 Readiness is "the service says it is listening *and* answers", not a sleep: wait
-for its startup log lines and then poll its health endpoint. Give the process
-its own process group so a signal aimed at it is not also delivered to the
-suite, and send its stdout/stderr to a file — a panic goes there, not to the
-service's own log, and it is the first thing you will want when a start fails.
+for its startup log lines and then make a real call — an HTTP health route, a
+gRPC health check, a query. Which fact counts as ready is adapter-specific and
+some are counterintuitive (a gRPC dial succeeds against a dead port; an MQTT
+publish before the service subscribes is lost silently; a Kafka produce before
+the group joins is not), so take it from `adapters.md` rather than assuming a
+connection means readiness.
+
+Give the process its own process group so a signal aimed at it is not also
+delivered to the suite, and send its stdout/stderr to a file — a panic goes
+there, not to the service's own log, and it is the first thing you will want
+when a start fails.
 
 Keeping `Launch` and `WaitExit` separate from `Start` is what makes "it must
 refuse to start when its port is taken" testable at all.
@@ -120,20 +141,31 @@ checkout look right. Fail with a sentence that names the fix.
 ## 7. Forcing the failure paths
 
 Error handling is where services hide their worst bugs, and it needs provoking
-from outside:
+from outside. The shapes below hold everywhere; the exact statement or call for
+each is in `adapters.md`, and it differs enough between stores and brokers that
+guessing produces a scenario which passes without provoking anything.
 
 - **Constraint violations** — reference an entity that does not exist, where the
-  schema has a foreign key.
+  schema has a foreign key. Confirm the constraint is actually enforced before
+  trusting the scenario: some engines parse and ignore one.
 - **A store that rejects writes** — install a trigger that raises on `UPDATE` of
   one table, or revoke a permission, then remove it afterwards.
 - **A query that fails** — rename a table out of the way inside a helper that
   restores it with a deferred call, so the restore happens even when the
-  scenario aborts. Renaming keeps the table's identity, so pooled connections
-  and cached statements survive it.
+  scenario aborts. Renaming keeps the table's identity, so in PostgreSQL pooled
+  connections and cached statements survive it; verify the service really errors
+  rather than transparently recovering, since caching behaviour differs by
+  engine.
+- **A dependency that disappears mid-flight** — kill the service's connection
+  from the dependency's side where it offers that, otherwise stop and restart
+  the dependency. Assert the in-flight operation did not report success.
 - **A port already taken** — bind it from the suite before starting the service.
 - **Malformed input** — bytes the service's own decoder cannot parse.
-- **Replay** — publish a retained/queued message, then restart the service so
-  the broker replays it into a fresh subscription.
+- **Replay** — make the broker deliver a message the service has already seen.
+  How depends entirely on the broker: a retained message and a fresh
+  subscription on MQTT, a reset group offset or an uncommitted kill on Kafka, a
+  requeued nack on AMQP. The assertion is the same everywhere — the second
+  delivery must not record the same thing twice.
 
 Always undo these with a deferred restore, and afterwards assert the service
 still works: recovery from a transient failure is itself a promise worth

@@ -20,6 +20,26 @@ service swallows rather than reports.
 4. **The suite, compressed**, handed back to you.
 5. **A question** — which of the problems found should be fixed.
 
+## Any stack
+
+The suite is built against whatever the service actually connects to, determined
+by reading its dependency manifest, configuration and connection code rather
+than assumed. `references/adapters.md` carries, per adapter, how to stand it up,
+how to know it is ready, what counts as a deterministic "it processed this",
+how to force it to fail, and the scenarios that exist only because of it:
+
+| | |
+| --- | --- |
+| **Service interfaces** | HTTP/REST, gRPC (including streaming, deadlines and status details) |
+| **Ingest** | Kafka, MQTT, AMQP/RabbitMQ |
+| **Stores** | PostgreSQL, MySQL/MariaDB, and stores with no schema at all |
+
+Anything not on that list is handled by a five-question method in the same file,
+so an unlisted adapter degrades to "work it out deliberately" rather than to
+"assume it looks like HTTP". The architecture, the runner and the report are the
+same whatever the answers are; the harness and a good part of the scenario list
+are not.
+
 The generated suite deliberately never enters the service's repository or its
 pull requests: test-only dependencies stay out of the service's module, and a
 large diff of test code never drowns a two-line fix under review.
@@ -62,7 +82,8 @@ out of the gap between them.
 | `SKILL.md` | the workflow: required inputs, contract, scenarios, generation, the run, the report, and what to do about what it found |
 | `references/architecture.md` | the suite's module layout, what each layer owns, and why it is a program rather than a test package |
 | `references/harness-patterns.md` | the mechanics that keep a black-box suite deterministic: cursor-based log waiting, per-scenario receipt markers, process lifecycle, oracles, forcing error paths |
-| `references/scenario-catalog.md` | a checklist for turning a contract into scenarios, by interface type |
+| `references/scenario-catalog.md` | a checklist for turning a contract into scenarios, by interface type — what every service owes its callers, whatever it runs on |
+| `references/adapters.md` | per-adapter harness and scenarios — HTTP, gRPC, Kafka, MQTT, AMQP, PostgreSQL, MySQL, schemaless stores — and how to work out one that is not listed |
 | `references/report-manifest.example.json` | a filled-in manifest for the report script |
 | `scripts/build_report.py` | renders the run's report page — scenarios and results, findings, and the suite's source — from a JSON manifest |
 

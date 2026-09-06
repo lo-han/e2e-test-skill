@@ -1,6 +1,6 @@
 ---
 name: e2e-test-app
-description: Build a standalone end-to-end test application for a service from its source code plus a specification, run it against the real built binary, report what passed and failed, and hand back the suite compressed as an artifact. Use this whenever someone wants a service tested end to end, black box, or "for real" rather than with unit tests — phrasings like "write e2e tests for this API", "test my server against its spec", "build an integration test app for this worker", "I want a test application for these endpoints and consumers", "check my service actually does what the docs say", or when they hand over a repository and a contract/README/OpenAPI file and ask what breaks. Also use it when someone asks to test HTTP endpoints, queue or stream consumers, background workers, or the log lines a service produces. Requires both the application code and a specification; ask for whichever is missing rather than guessing.
+description: Build a standalone end-to-end test application for a service from its source code plus a specification, run it against the real built binary, report what passed and failed, and hand back the suite compressed as an artifact. Use this whenever someone wants a service tested end to end, black box, or "for real" rather than with unit tests — phrasings like "write e2e tests for this API", "test my server against its spec", "build an integration test app for this worker", "check my service actually does what the docs say", or when they hand over a repository and a contract/README/OpenAPI/proto file and ask what breaks. Builds against whatever stack the code actually uses — HTTP or gRPC, Kafka, MQTT or AMQP, PostgreSQL, MySQL or a schemaless store — rather than assuming one. Also use it when someone asks to test HTTP or gRPC endpoints, queue, topic or stream consumers, background workers, or the log lines a service produces. Requires both the code and a specification; ask for whichever is missing.
 ---
 
 # End-to-end test applications
@@ -47,22 +47,55 @@ each entry point, what it accepts, what it must store or answer, what it must
 refuse, and what it must record when it refuses. Include where the promises
 disagree with the code — those are the first candidate findings.
 
-Then work out what the service talks to and how each dependency will be stood
-up for real. Prefer a real dependency in-process or local (an embeddable broker,
-a local PostgreSQL, a temporary directory) over a mock, because the behaviours
-worth testing — retained messages, constraint violations, connection failures —
-only exist in the real thing. Note what the service needs from its environment:
-env vars, ports, schemas, files.
+### Then take the stack inventory
 
-When the service's storage has no migrations in the repository, reconstruct the
-schema from the statements in its data-access code: every column it selects,
-inserts or updates, typed as the value it scans into. Ship that as a `.sql` file
-in the suite and say where it came from.
+Never assume the stack from the shape of the service or from a previous run —
+determine it, from the code, before designing anything. Read the dependency
+manifest (`go.mod`, `pom.xml`, `package.json`, `requirements.txt`,
+`Cargo.toml`), the configuration and env parsing, the deployment files
+(`docker-compose.yml`, Helm charts, `Makefile`), and the place where each
+connection is opened. Then write down one line per dependency:
+
+| | |
+| --- | --- |
+| **Role** | inbound transport, ingest, store, or outbound call |
+| **Adapter** | the concrete technology and its client library, with version |
+| **Stood up how** | in-process, container, or an external instance behind a flag |
+| **Ready when** | the observable fact that says it can be used |
+| **Failed how** | the way this scenario suite will provoke it to fail |
+
+A service on gRPC, Kafka and MySQL and one on HTTP, MQTT and PostgreSQL get the
+same suite architecture and substantially different harnesses, scenarios and
+failure injection — so this table, not a guess, is what Phases 2 and 3 build on.
+Read `references/adapters.md` for the adapters you found: it carries the
+standing-up, readiness, deterministic-marker, failure-forcing and
+scenarios-that-exist-only-here for each, and a five-question method for an
+adapter it does not list. Record any adapter you had to work out yourself, so
+the next run starts from it.
+
+Prefer a real dependency in-process or local over a mock, because the behaviours
+worth testing — redelivery, constraint violations, connection failures — only
+exist in the real thing. Some adapters have no in-process form (Kafka is the
+common one); there, a container or an external instance behind a flag is the
+right answer and `adapters.md` says so. Note what the service needs from its
+environment: env vars, ports, schemas, files.
+
+When the service's storage has no migrations in the repository, reconstruct its
+shape from the statements in the data-access code: for a SQL store every column
+it selects, inserts or updates, typed as the value it scans into, shipped as a
+`.sql` file in the store's own dialect; for a store without a schema, the
+document or key shape and the indexes it relies on, shipped as whatever that
+store's setup takes. Either way, say where it came from.
 
 ## Phase 2 — Enumerate the scenarios
 
 Read `references/scenario-catalog.md` and work the checklist against the
-contract. Aim for coverage of failure paths, not a round number of tests: the
+contract, then the sections of `references/adapters.md` for the adapters in the
+inventory — the catalog covers what every service owes its callers, and the
+adapter sections add the scenarios that exist only because of the chosen
+technology (redelivery and partition ordering on Kafka, deadlines and streaming
+on gRPC, `sql_mode` on MySQL). A suite missing those tests a service that was
+never built. Aim for coverage of failure paths, not a round number of tests: the
 happy path is one scenario, and the ways it can go wrong are twenty.
 
 Group scenarios into suites by area (one per entry point, one for the logs, one
@@ -196,5 +229,8 @@ service so the report reflects the change, and say what moved.
   process lifecycle, log-cursor waiting, receipt markers, oracles, preflight.
 - `references/scenario-catalog.md` — the checklist for turning a contract into
   scenarios, by interface type.
+- `references/adapters.md` — per-adapter harness and scenarios: HTTP, gRPC,
+  Kafka, MQTT, AMQP, PostgreSQL, MySQL, schemaless stores, and how to work out
+  one that is not listed.
 - `references/report-manifest.example.json` — a filled-in manifest for the
   report script.

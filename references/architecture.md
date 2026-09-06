@@ -27,15 +27,15 @@ in one command.
   internal/runner/
     runner.go          Scenario, Suite, Result, the runner, the report
   internal/harness/
-    config.go          ports, paths, topics, timeouts, preflight checks
-    schema.sql         the storage schema, reconstructed from the service's queries
+    config.go          endpoints, paths, topics, timeouts, preflight checks
+    schema.sql         the storage shape, rebuilt from the service's queries
     <store>.go         apply schema, seed fixtures, read rows back, poll for writes
     fixtures.go        the entities scenarios act as, including ones meant to fail
-    <transport>.go     the broker/queue the service consumes from, in-process
+    <ingest>.go        the broker/queue/stream the service consumes from
     events.go          the payloads the spec fixes, exactly as they go on the wire
     server.go          build, start, wait-until-ready, restart, signal, stop
     logfile.go         cursor-based reader over the service's log
-    api.go             HTTP client that keeps status, headers and raw body
+    <transport>.go     client for the service's interface, keeping raw answers
     oracle.go          any value the suite must compute independently
   internal/scenarios/
     env.go             what a scenario is handed, plus publish/await helpers
@@ -54,10 +54,19 @@ an interface small enough to implement over the runner's own failure collector
 (in Go, testify's `assert` needs only `Errorf`). That buys good diffs for free.
 
 **harness** owns every piece of the outside world and every way of watching the
-service. Scenarios should never call a database driver or an HTTP client
+service. Scenarios should never call a database driver or a protocol client
 directly; when they do, waiting and error handling get reinvented per scenario
 and diverge. If a scenario needs a new way to observe the service, that goes in
 the harness.
+
+It holds one file per adapter, named for what the stack inventory actually
+found: `postgres.go` or `mysql.go`, `kafka.go` or `mqtt.go`, `grpc.go` or
+`api.go`. The names above are placeholders, not a template to reproduce.
+`schema.sql` is a SQL store's form of the setup file, in that store's dialect —
+a schemaless store ships whatever creates its collections, indexes or keys
+instead. A gRPC suite also carries its own generated stubs, produced from the
+service's `.proto` by the suite's own toolchain rather than imported from the
+service, which is what keeps it black box. See `adapters.md` for each.
 
 **scenarios** are the only place with expectations in them. Each is a name, a
 `Doc` naming the promise it pins, and a function. They run in declaration order
@@ -85,7 +94,7 @@ Flags worth having, because each answers a question someone will have:
 | Flag | Why |
 | --- | --- |
 | `-repo` | which checkout to build; the suite lives outside it |
-| `-db` / connection settings | the environment it runs against |
+| `-db`, `-brokers` / connection settings | the environment it runs against; one flag per dependency the inventory listed |
 | `-run <regex>` | work on one area without waiting for the rest |
 | `-list` | see what would run without running it |
 | `-v` | per-scenario notes while debugging |

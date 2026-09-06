@@ -4,6 +4,13 @@ Work this checklist against the contract from Phase 1. Not every line applies to
 every service; the ones that do usually double the scenario count, and the extra
 ones are where the defects are.
 
+This checklist is what every service owes its callers, whatever it is built on.
+It is deliberately not the whole suite: each adapter adds scenarios that exist
+only because of it — redelivery and partition ordering on Kafka, deadlines and
+streaming on gRPC, retained messages and last wills on MQTT, `sql_mode` on
+MySQL. Work `adapters.md` for the adapters the stack inventory found, in
+addition to this.
+
 ## For every interface
 
 - **The happy path**, asserted on the *effect*, not the status code: a row with
@@ -21,22 +28,36 @@ ones are where the defects are.
 
 ## Read / query interfaces
 
-- Every documented route, with its documented shape — field names and types as
-  the spec writes them, not as the code happens to emit them.
+Written for HTTP, since that is the common case; the equivalents for another
+transport are in `adapters.md`, and where a line below names a route or a verb,
+read it as "the addressable operation" and "the way it is invoked".
+
+- Every documented operation, with its documented shape — field names and types
+  as the spec writes them, not as the code happens to emit them.
 - Empty results: an empty list, a missing entity, an entity that exists but has
   no history. Distinguish the answers the spec gives to each.
 - Optional fields absent when they should be absent (a run that has not ended
   carries no end time), which catches serialisation that emits nulls or zeros.
 - Ordering, when the spec promises it — seed at least three items so a reversed
   comparison cannot pass by luck.
-- Methods and routes that should not exist: the wrong verb, a route one segment
-  too long. Check what the framework advertises as allowed actually works — a
-  route that answers `Allow: GET, HEAD` and then refuses `HEAD` is a real bug
-  found exactly this way.
+- Operations that should not exist: on HTTP, the wrong verb and a route one
+  segment too long — check that what the framework advertises as allowed
+  actually works, since a route answering `Allow: GET, HEAD` and then refusing
+  `HEAD` is a real bug found exactly this way. On gRPC, the equivalents are an
+  unknown method on a known service and a known method sent the wrong request
+  type.
+- The error the spec names, in the form the transport carries it: a status code
+  and body on HTTP, a status code and details on gRPC. A service that answers
+  the same generic error for every failure is a finding on its own.
 - Failures behind the response: what the caller gets and what the operator gets
   when the query itself fails.
 
 ## Ingest interfaces — consumers, workers, webhooks
+
+Every line here applies whatever the broker is. What the broker adds on top of
+them — how a replay is provoked, whether ordering is promised at all, what
+happens to the messages behind a poison one — is in `adapters.md`, and it is
+usually where the sharpest scenarios come from.
 
 - Each message type in the contract, including the ones that must store nothing.
 - **Null is not zero** — a nullable measurement absent must never be recorded as
@@ -49,11 +70,13 @@ ones are where the defects are.
   a stop after a stop. Assert the earlier record was not rewritten.
 - Only the intended record changes: with two open records, a close must take the
   right one and leave the other.
-- Replay and idempotence — a retained or redelivered message, after a restart,
-  must not record the same thing twice.
-- Last wills and liveness messages, where the contract has them: "the publisher
-  is unreachable" is not "the thing stopped", and inventing an end time
-  fabricates history.
+- Replay and idempotence — a redelivered message, after a restart, must not
+  record the same thing twice. Every broker worth using promises at-least-once
+  delivery, so this is a promise the *service* has to keep; the way to provoke
+  the second delivery is adapter-specific.
+- Liveness and disconnection messages, where the contract has them (an MQTT last
+  will, a heartbeat going stale): "the publisher is unreachable" is not "the
+  thing stopped", and inventing an end time fabricates history.
 
 ## Logs
 
@@ -77,9 +100,11 @@ delivers.
   to its log rather than truncating it.
 - Replayed messages after a reconnect record nothing new.
 - A dependency that cannot be acquired at startup — a taken port, an unreachable
-  store — is reported, not swallowed. A process that stays up with half its
-  interfaces dead and says nothing is the worst outcome, and services do this
-  more often than anyone expects.
+  store, a broker that is down — is reported, not swallowed. Do this once per
+  dependency in the inventory, since services commonly handle one carefully and
+  the rest not at all. A process that stays up with half its interfaces dead and
+  says nothing is the worst outcome, and services do this more often than anyone
+  expects.
 - Graceful shutdown: the documented signal, each documented step in the log, and
   the exit code.
 - After shutdown, the interfaces really are closed.
