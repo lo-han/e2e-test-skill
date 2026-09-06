@@ -1,0 +1,107 @@
+{
+  "_comment": "A filled-in manifest for scripts/build_report.py, trimmed to a few scenarios. Every key except title is optional; the script documents the full schema at the top. Take scenarios from the suite's -json output rather than retyping them, and trim assertion-framework noise (an 'Error:'/'Messages:' prefix, a stack trace) out of each detail so it reads as a sentence.",
+
+  "title": "Archimedes E2E Suite",
+  "eyebrow": "End-to-end test application · archimedes-server",
+  "headline": "Archimedes E2E Suite",
+  "headline_tail": "— 60 scenarios against the built binary",
+  "lede": [
+    "It builds the server from a checkout, starts an MQTT broker in its own process, applies a schema reconstructed from the statements in the server's PostgreSQL adapter, runs the binary, and then drives it the way its devices and its operators do.",
+    "Nothing is stubbed, and nothing is imported from the server's own packages — so what passes here is what the deployed binary does."
+  ],
+
+  "figures": [
+    { "label": "Scenarios", "value": 60 },
+    { "label": "Passing", "value": 59, "tone": "pass" },
+    { "label": "Failing", "value": 1, "tone": "fail" },
+    { "label": "Wall clock", "value": "8.0", "unit": "s" }
+  ],
+
+  "suites": [
+    {
+      "name": "harness-self-check",
+      "what": "the oracle and the fixtures, before the server is touched",
+      "scenarios": [
+        {
+          "name": "volume_oracle_reproduces_the_servers_unit_tests",
+          "doc": "the reference calculator must agree with the numbers the service's own tests assert",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "name": "http-read-api",
+      "what": "the six read routes, their 404s and their 500s",
+      "scenarios": [
+        {
+          "name": "health_returns_ok",
+          "doc": "GET /health is a liveness check (README.md API table)",
+          "status": "PASS"
+        },
+        {
+          "name": "health_serves_the_methods_it_advertises",
+          "doc": "the route answers the methods its own Allow header names, and no others",
+          "status": "FAIL",
+          "detail": "the route answers \"GET, HEAD\", but the handler rejects every method that is not GET, so a HEAD liveness probe is refused by a route that advertises it"
+        },
+        {
+          "name": "unknown_pump_history_is_an_empty_array",
+          "doc": "the history handler answers [] rather than 404: the repository never returns nil",
+          "status": "PASS"
+        }
+      ]
+    }
+  ],
+
+  "findings": [
+    {
+      "title": "HEAD /health is refused by a route that advertises it",
+      "status": "open",
+      "body": "Registering GET /health makes net/http route HEAD to the same handler and answer Allow: GET, HEAD, but the handler's own method check rejects anything that is not GET. A HEAD liveness probe gets 405 from a route that says it accepts it."
+    },
+    {
+      "title": "Failed database writes were reported as successes",
+      "status": "fixed",
+      "body": "The write helper closed its rows without reading them, and pgx surfaces a statement's execution error only through those rows, so a rejected INSERT or UPDATE returned nil and the event was lost with no trace. Fixed by using Exec."
+    }
+  ],
+
+  "run": [
+    {
+      "caption": "Provision a database the suite may drop the archimedes schema in. It owns the schema; you own the cluster.",
+      "command": "./scripts/setup-postgres.sh"
+    },
+    {
+      "caption": "Point it at a checkout and run. Exit 0 when every scenario passed, 1 when any failed, 2 when the environment could not be stood up.",
+      "command": "go run . -repo /path/to/archimedes-server -db \"postgres://archimedes:archimedes@127.0.0.1:5432/archimedes_e2e\""
+    }
+  ],
+
+  "determinism": "It waits on what the server wrote, never on a timer. Every published event carries an e2e_case field naming the scenario; the contract says unknown fields are ignored, so it changes nothing the server does — but the processors log each payload verbatim, which gives the scenario one unambiguous line to wait for. The log reader is cursor-based: a wait consumes the line it matched, so a later scenario cannot match an earlier one's line.",
+
+  "source_root": "/absolute/path/to/archimedes-e2e",
+  "groups": [
+    {
+      "title": "Entry point",
+      "blurb": "the command itself: flags, environment, and the order the suites run in",
+      "files": [
+        {
+          "path": "main.go",
+          "purpose": "Builds the server, stands the environment up, runs the suites, writes the report, and tears everything down again."
+        }
+      ]
+    },
+    {
+      "title": "Harness",
+      "blurb": "everything the service talks to, and the ways the suite watches it",
+      "files": [
+        {
+          "path": "internal/harness/logfile.go",
+          "purpose": "The cursor-based log reader the suite synchronises on: a wait consumes the line it matched."
+        }
+      ]
+    }
+  ],
+
+  "footer": "archimedes-e2e · Go 1.25 · a module of its own, outside the server it tests"
+}
