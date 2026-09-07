@@ -20,6 +20,28 @@ service swallows rather than reports.
 4. **The suite, compressed**, handed back to you.
 5. **A question** — which of the problems found should be fixed.
 
+## Pre-coded, not re-generated
+
+The runner, process control, log cursor, waits and one adapter per technology
+are **shipped as working Go** under `assets/`, and a script assembles them:
+
+```bash
+python3 scripts/scaffold.py --name payments \
+    --module example.com/payments-e2e \
+    --adapters http,postgres,kafka \
+    --out ../payments-e2e
+```
+
+That emits a suite that compiles and runs, with `main.go` wired for those
+adapters — their flags, readiness probes and teardown already correct. Only the
+scenarios, the fixtures and the schema are written per service, because only
+those actually differ between one service and the next.
+
+The point is cost. Roughly 2,200 lines of harness — about 18k tokens — is
+copied rather than generated, on every service tested, and the model reads a
+one-page API summary (`references/harness-api.md`) instead of the sources. What
+is left to write is the part that needed judgement anyway.
+
 ## Any stack
 
 The suite is built against whatever the service actually connects to, determined
@@ -31,8 +53,8 @@ how to force it to fail, and the scenarios that exist only because of it:
 | | |
 | --- | --- |
 | **Service interfaces** | HTTP/REST, gRPC (including streaming, deadlines and status details) |
-| **Ingest** | Kafka, MQTT, AMQP/RabbitMQ |
-| **Stores** | PostgreSQL, MySQL/MariaDB, and stores with no schema at all |
+| **Ingest** | Kafka, MQTT (AMQP documented, not yet pre-coded) |
+| **Stores** | PostgreSQL, MySQL/MariaDB, Redis, and stores with no schema at all |
 
 Anything not on that list is handled by a five-question method in the same file,
 so an unlisted adapter degrades to "work it out deliberately" rather than to
@@ -51,7 +73,7 @@ Copy the skill into your skills directory, under a folder named for the skill:
 ```bash
 git clone https://github.com/lo-han/e2e-test-skill.git
 mkdir -p ~/.claude/skills/e2e-test-app
-cp -r e2e-test-skill/{SKILL.md,references,scripts} ~/.claude/skills/e2e-test-app/
+cp -r e2e-test-skill/{SKILL.md,references,scripts,assets} ~/.claude/skills/e2e-test-app/
 ```
 
 Use `<your-project>/.claude/skills/e2e-test-app/` instead to scope it to one
@@ -83,7 +105,11 @@ out of the gap between them.
 | `references/architecture.md` | the suite's module layout, what each layer owns, and why it is a program rather than a test package |
 | `references/harness-patterns.md` | the mechanics that keep a black-box suite deterministic: cursor-based log waiting, per-scenario receipt markers, process lifecycle, oracles, forcing error paths |
 | `references/scenario-catalog.md` | a checklist for turning a contract into scenarios, by interface type — what every service owes its callers, whatever it runs on |
-| `references/adapters.md` | per-adapter harness and scenarios — HTTP, gRPC, Kafka, MQTT, AMQP, PostgreSQL, MySQL, schemaless stores — and how to work out one that is not listed |
+| `references/adapters.md` | per-adapter behaviour and the scenarios that exist only for it — HTTP, gRPC, Kafka, MQTT, AMQP, PostgreSQL, MySQL, Redis, schemaless stores — and how to work out one that is not listed |
+| `references/harness-api.md` | the pre-coded harness surface the scenarios call, in a page — read instead of the adapter sources |
+| `assets/suite/` | the service-agnostic core: runner, process control, log cursor, waits |
+| `assets/adapters/` | one adapter per technology, copied into a suite by the scaffold |
+| `scripts/scaffold.py` | assembles a suite from the core plus the chosen adapters, and wires `main.go` |
 | `references/report-manifest.example.json` | a filled-in manifest for the report script |
 | `scripts/build_report.py` | renders the run's report page — scenarios and results, findings, and the suite's source — from a JSON manifest |
 

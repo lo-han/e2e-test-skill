@@ -18,6 +18,10 @@ in one command.
 
 ## Layout
 
+This is what `scripts/scaffold.py` produces. It is documentation of a generated
+tree, not a list of files to write by hand: everything except `fixtures.go`,
+`schema.sql` and `internal/scenarios/<area>.go` is copied in already working.
+
 ```
 <service>-e2e/
   main.go              flags, config, environment setup, suite order, exit code
@@ -52,6 +56,10 @@ the next service's suite.
 Use the language's usual assertion library rather than writing one — most take
 an interface small enough to implement over the runner's own failure collector
 (in Go, testify's `assert` needs only `Errorf`). That buys good diffs for free.
+
+The pre-coded parts are `runner/`, `logfile.go`, `process.go`, `wait.go`,
+`payload.go`, `util.go` and one adapter file per technology. Their surface is
+`references/harness-api.md`; read that rather than the sources.
 
 **harness** owns every piece of the outside world and every way of watching the
 service. Scenarios should never call a database driver or a protocol client

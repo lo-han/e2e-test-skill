@@ -6,8 +6,14 @@ how to stand it up, how to know it is ready, what the deterministic "it has
 processed this" marker is, how to force it to fail, and the scenarios that exist
 only for that adapter.
 
+Each adapter listed here is **already implemented** in `assets/adapters/` and
+lands in the suite when `scripts/scaffold.py --adapters ...` runs; this file is
+the behaviour and the scenarios behind it, not something to translate into
+code. `references/harness-api.md` is the surface those implementations expose.
+
 Read the sections for the adapters the service actually uses and ignore the
-rest. If an adapter is not here, work the five questions at the bottom.
+rest. If an adapter is not here, work the five questions at the bottom — that
+is the one case where a harness file gets written by hand.
 
 Nothing in the rest of the skill assumes MQTT, PostgreSQL or HTTP. Where an
 example names one, it is an example.
@@ -196,7 +202,25 @@ three differences silently change what a scenario proves.
 - Reconstructing the schema: `AUTO_INCREMENT` rather than `SERIAL`, `utf8mb4`
   rather than an assumed default, and no `RETURNING` before 10.5 / MariaDB.
 
-## Stores without a schema — Mongo, Redis, DynamoDB, files
+## Redis
+
+Shipped without a client library: the adapter speaks RESP over a socket, so the
+suite never has to agree with whatever Redis client version the service uses.
+
+- **Ready:** `PING` answers `PONG`.
+- **Marker:** poll the key with `WaitForKey`. Redis has no log of its own to
+  wait on, so the service's log line is the other half of every assertion.
+- **Force failure:** `BreakWrites` sets `min-replicas-to-write`, so the server
+  rejects writes; it fails cleanly when `CONFIG SET` is disabled, which some
+  managed instances do.
+- **Its own scenarios:** absence versus the empty string — `GET` on a missing
+  key and on a key holding `""` are different answers and a service commonly
+  conflates them; TTLs the contract promises, asserted as a bounded range
+  rather than an exact number; eviction under `maxmemory` where the contract
+  admits it; and, when the service uses Redis as a lock or a queue, what
+  happens to a held key when the service is killed mid-operation.
+
+## Stores without a schema — Mongo, DynamoDB, files
 
 The `schema.sql` step becomes "reconstruct the document, key or item shape from
 the access code", shipped as whatever the store's setup takes (a script creating
