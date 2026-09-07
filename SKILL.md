@@ -105,35 +105,61 @@ naming the promise it pins and where that promise was made. When a scenario
 fails, that line is what tells the reader whether the service or the suite is
 wrong, so it earns its place.
 
-## Phase 3 — Generate the suite
+## Phase 3 — Scaffold the suite, then write only the scenarios
 
-Read `references/architecture.md` for the layout and the reasoning, and
-`references/harness-patterns.md` for the concrete mechanics — process control,
-log-cursor synchronisation, the receipt marker, oracles, preflight checks.
+**Do not write the harness. It is already written.** The runner, the process
+control, the log cursor, the waits and one adapter per technology ship with
+this skill as working Go under `assets/`, and a script assembles them into a
+suite for the adapters the inventory found:
 
-The structure, which stays the same across services:
-
-```
-<service>-e2e/
-  main.go            entry point: flags, environment, suite order, reporting
-  README.md          what it covers, how to run it, what it currently reports
-  scripts/           provisioning a caller runs once (database role, etc.)
-  internal/runner/   scenario + suite types, assertion sink, the report
-  internal/harness/  everything the service talks to, and how the suite watches it
-  internal/scenarios/ the test cases, one file per suite
+```bash
+python3 scripts/scaffold.py --name payments \
+    --module example.com/payments-e2e \
+    --adapters http,postgres,kafka \
+    --out ../payments-e2e
+cd ../payments-e2e && go mod tidy
 ```
 
-Write it in the service's own language when that language can build and run a
-subprocess comfortably; Go is a good default even for services written in
-something else, since the suite ships as one binary with no runtime to install.
+`--adapters` takes any of `http, grpc, postgres, mysql, redis, mqtt, kafka`
+(`--list` shows them). That produces a suite that compiles and runs, with
+`main.go` wired for those adapters, their flags, readiness probes and teardown
+already correct.
+
+Then read `references/harness-api.md` — **and not the adapter sources**. It is
+the whole surface the scenarios call, in about a page. Opening the adapters to
+find out what they do costs thousands of tokens to learn something the
+cheat-sheet already states, and re-implementing any of it produces a harness
+with fresh bugs in it.
+
+Three things are left to write, and they are the only things this skill's
+judgement is needed for:
+
+| | |
+| --- | --- |
+| `internal/harness/fixtures.go` | the entities scenarios act as, including the ones meant to fail |
+| `internal/harness/schema.sql` | the store's shape, when the repo has no migrations (skip for a schemaless store) |
+| `internal/scenarios/<area>.go` | the scenarios, one file per suite, listed in `All()` |
+
+If the service needs something no adapter covers, write that one file into
+`internal/harness/` in the same shape — a constructor, a `Ready()`, waits that
+poll rather than sleep, and failure injection with a deferred restore — and say
+in the report that it was hand-written. Do not fork the pre-coded ones.
+
+The suite is Go regardless of the service's language: it drives the built
+binary over real protocols, so it never needs to be written in what the service
+is written in, and it ships as one binary with no runtime to install.
 
 Four properties make the difference between a suite people trust and one they
-delete:
+delete. The scaffolded code already holds the first two; the third and fourth
+are yours to keep:
 
 - **Black box.** It imports nothing from the service. It drives the built
-  binary over its real interfaces, so what passes is what deploys.
+  binary over its real interfaces, so what passes is what deploys. For gRPC
+  this means generating stubs into the suite from the `.proto`, never importing
+  the service's generated package.
 - **Deterministic.** Every wait is on something the service actually did — a
-  row appearing, a log line landing — never a sleep. Flakes destroy a suite's
+  row appearing, a log line landing — never a sleep. The harness has no sleep
+  in it; do not introduce one in a scenario. Flakes destroy a suite's
   credibility faster than gaps in it.
 - **Self-checking.** Where the suite computes an expected value, pin that
   oracle against numbers the service's own tests already assert, and run it as
@@ -227,10 +253,14 @@ service so the report reflects the change, and say what moved.
   the suite is a program rather than a test package.
 - `references/harness-patterns.md` — the mechanics that make it deterministic:
   process lifecycle, log-cursor waiting, receipt markers, oracles, preflight.
+- `references/harness-api.md` — the pre-coded harness surface the scenarios
+  call. Read this rather than the adapter sources.
 - `references/scenario-catalog.md` — the checklist for turning a contract into
   scenarios, by interface type.
-- `references/adapters.md` — per-adapter harness and scenarios: HTTP, gRPC,
-  Kafka, MQTT, AMQP, PostgreSQL, MySQL, schemaless stores, and how to work out
-  one that is not listed.
+- `references/adapters.md` — per-adapter behaviour and the scenarios that exist
+  only for it: HTTP, gRPC, Kafka, MQTT, AMQP, PostgreSQL, MySQL, Redis,
+  schemaless stores, and how to work out one that is not listed.
+- `assets/suite/` and `assets/adapters/` — the pre-coded suite and one adapter
+  per technology, copied in by the scaffold script. Not reading material.
 - `references/report-manifest.example.json` — a filled-in manifest for the
   report script.
