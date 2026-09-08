@@ -1,0 +1,8 @@
+{
+  "name": "e2e-test-app",
+  "description": "Build a standalone end-to-end test application for a service from its source code plus a specification, run it against the real built binary, and report what passed and failed.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "homepage": "https://github.com/lo-han/e2e-test-skill",
+  "repository": "https://github.com/lo-han/e2e-test-skill"
+}
