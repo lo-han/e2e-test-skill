@@ -68,16 +68,16 @@ large diff of test code never drowns a two-line fix under review.
 
 ## Installing
 
-Copy the skill into your skills directory, under a folder named for the skill:
+Add this repository as a marketplace, then install the plugin:
 
 ```bash
-git clone https://github.com/lo-han/e2e-test-skill.git
-mkdir -p ~/.claude/skills/e2e-test-app
-cp -r e2e-test-skill/{SKILL.md,references,scripts,assets} ~/.claude/skills/e2e-test-app/
+claude plugin marketplace add lo-han/e2e-test-skill
+claude plugin install e2e-test-app@e2e-test-skill
 ```
 
-Use `<your-project>/.claude/skills/e2e-test-app/` instead to scope it to one
-repository.
+That installs it for your user. Pass `--scope project` to scope it to the
+repository you are working in instead, and run
+`claude plugin update e2e-test-app` to pick up later changes.
 
 ## Using it
 
@@ -112,24 +112,7 @@ out of the gap between them.
 | `scripts/scaffold.py` | assembles a suite from the core plus the chosen adapters, and wires `main.go` |
 | `references/report-manifest.example.json` | a filled-in manifest for the report script |
 | `scripts/build_report.py` | renders the run's report page — scenarios and results, findings, and the suite's source — from a JSON manifest |
-
-## Provenance
-
-The workflow is drawn from a real run against
-[archimedes-server](https://github.com/archimedes-water-pump-automation/archimedes-server),
-an MQTT-and-PostgreSQL service for monitoring water tanks and pumps. The suite
-built there — 60 scenarios over its HTTP API, both stream consumers, its log
-lines and its lifecycle — found three defects its unit tests could not reach:
-
-- failed database writes reported as successes, because the write helper closed
-  its rows without reading them and the driver surfaces execution errors only
-  through those rows;
-- a read API logged as running when it could never open its port, because the
-  error from `ListenAndServe` was discarded in a goroutine;
-- `HEAD /health` refused by a route whose own `Allow` header advertises it.
-
-Each is a failure the service reported as a success — which is the class of bug
-this skill exists to surface.
+| `.claude-plugin/` | the plugin and marketplace manifests that make `claude plugin install` work |
 
 ## License
 

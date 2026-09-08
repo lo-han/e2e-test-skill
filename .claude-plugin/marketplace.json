@@ -1,0 +1,14 @@
+{
+  "name": "e2e-test-skill",
+  "owner": {
+    "name": "lo-han",
+    "url": "https://github.com/lo-han"
+  },
+  "plugins": [
+    {
+      "name": "e2e-test-app",
+      "source": "./",
+      "description": "Builds a standalone end-to-end test application for a service from its source code plus a specification, runs it against the real binary, and reports what breaks."
+    }
+  ]
+}
